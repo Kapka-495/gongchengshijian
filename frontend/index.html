@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>材料 XRD 可视化</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Chart.js：使用国内 CDN 避免加载失败 -->
+  <script src="https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>材料 XRD 可视化</h1>
+      <p class="subtitle">X 射线衍射数据处理与高斯展宽可视化</p>
+    </header>
+
+    <main class="content">
+      <section class="input-section">
+        <h2>数据输入</h2>
+
+        <!-- 数据集 1 -->
+        <div class="dataset-section">
+          <h3>数据集 1</h3>
+          <div class="input-methods">
+            <div class="method-tabs">
+              <button class="tab active" data-tab="paste1">粘贴数据</button>
+              <button class="tab" data-tab="npy1">上传 NPY 文件</button>
+              <button class="tab" data-tab="sample1">示例数据</button>
+            </div>
+
+            <div class="tab-content active" id="paste1">
+              <textarea
+                id="dataInput1"
+                placeholder="每行格式：角度 强度（空格或制表符分隔）&#10;示例：&#10;25.5 100&#10;26.2 85&#10;38.1 120"
+                rows="6"
+              ></textarea>
+            </div>
+
+            <div class="tab-content" id="npy1">
+              <p class="hint">上传包含 features 和 labels230 的 NPY 文件，features 形状为 [N, 8500]。</p>
+              <label class="file-input-wrap">
+                <input type="file" id="npyFile1" accept=".npy">
+                <span class="file-input-label" id="npyFileLabel1">选择 .npy 文件</span>
+              </label>
+              <div id="npyFileInfo1" style="display: none; margin-top: 1rem;">
+                <p id="npyFileDetails1" style="color: var(--text-secondary); font-size: 0.9rem;"></p>
+                <label style="display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.5rem;">
+                  <span style="font-size: 0.85rem; color: var(--text-secondary);">选择数据组 (0-based)</span>
+                  <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <input type="number" id="groupIndex1" value="0" min="0" style="width: 100px;">
+                    <button type="button" class="btn btn-secondary" id="refreshGroupBtn1" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">刷新</button>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div class="tab-content" id="sample1">
+              <p class="hint">点击下方按钮加载示例 XRD 峰数据</p>
+              <button type="button" class="btn btn-secondary" id="loadSample1">
+                加载示例数据
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 数据集 2 -->
+        <div class="dataset-section">
+          <h3>数据集 2</h3>
+          <div class="input-methods">
+            <div class="method-tabs">
+              <button class="tab active" data-tab="paste2">粘贴数据</button>
+              <button class="tab" data-tab="npy2">上传 NPY 文件</button>
+              <button class="tab" data-tab="sample2">示例数据</button>
+            </div>
+
+            <div class="tab-content active" id="paste2">
+              <textarea
+                id="dataInput2"
+                placeholder="每行格式：角度 强度（空格或制表符分隔）&#10;示例：&#10;25.8 95&#10;26.5 90&#10;38.4 115"
+                rows="6"
+              ></textarea>
+            </div>
+
+            <div class="tab-content" id="npy2">
+              <p class="hint">上传包含 features 和 labels230 的 NPY 文件，features 形状为 [N, 8500]。</p>
+              <label class="file-input-wrap">
+                <input type="file" id="npyFile2" accept=".npy">
+                <span class="file-input-label" id="npyFileLabel2">选择 .npy 文件</span>
+              </label>
+              <div id="npyFileInfo2" style="display: none; margin-top: 1rem;">
+                <p id="npyFileDetails2" style="color: var(--text-secondary); font-size: 0.9rem;"></p>
+                <label style="display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.5rem;">
+                  <span style="font-size: 0.85rem; color: var(--text-secondary);">选择数据组 (0-based)</span>
+                  <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <input type="number" id="groupIndex2" value="0" min="0" style="width: 100px;">
+                    <button type="button" class="btn btn-secondary" id="refreshGroupBtn2" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">刷新</button>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div class="tab-content" id="sample2">
+              <p class="hint">点击下方按钮加载示例 XRD 峰数据</p>
+              <button type="button" class="btn btn-secondary" id="loadSample2">
+                加载示例数据
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="params">
+          <h3>处理参数</h3>
+          <div class="param-grid">
+            <label>
+              <span>最小角度 (°)</span>
+              <input type="number" id="minAngle" value="5" step="0.1" min="0" max="90">
+            </label>
+            <label>
+              <span>最大角度 (°)</span>
+              <input type="number" id="maxAngle" value="90" step="0.1" min="5" max="180">
+            </label>
+            <label>
+              <span>步长 (°)</span>
+              <input type="number" id="step" value="0.01" step="0.001" min="0.001">
+            </label>
+            <label>
+              <span>Sigma (高斯展宽)</span>
+              <input type="number" id="sigma" value="0.1" step="0.01" min="0.01">
+            </label>
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-primary" id="processBtn">
+          处理并可视化
+        </button>
+      </section>
+
+      <section class="chart-section">
+        <h2>XRD 图谱</h2>
+        <div class="chart-options">
+          <label class="chart-mode-label">
+            <span>Y 轴显示</span>
+            <select id="chartYMode">
+              <option value="real">真实强度</option>
+              <option value="normalized">归一化 (0–1)</option>
+            </select>
+          </label>
+        </div>
+        <div class="charts-container">
+          <div class="chart-column">
+            <h3>数据集 1</h3>
+            <div class="chart-container">
+              <canvas id="xrdChart1"></canvas>
+            </div>
+          </div>
+          <div class="chart-column">
+            <h3>数据集 2</h3>
+            <div class="chart-container">
+              <canvas id="xrdChart2"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="chart-legend">
+          <div class="legend-row">
+            <span class="legend-item"><span class="dot original"></span> 原始峰</span>
+            <span class="legend-item"><span class="dot processed"></span> 高斯展宽后</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-item"><span class="dot max"></span> 最大值</span>
+            <span class="legend-item"><span class="dot min"></span> 最小值</span>
+            <span class="legend-item"><span class="dot q1"></span> Q1 (25%)</span>
+            <span class="legend-item"><span class="dot q2"></span> 中位数</span>
+            <span class="legend-item"><span class="dot q3"></span> Q3 (75%)</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="stats-section" id="statsSection">
+        <h2>数据统计</h2>
+        <p class="stats-hint">处理完成后将显示强度分布统计（最大值、最小值、四分位数）</p>
+        <div class="stats-grid" id="statsGrid">
+          <div class="stats-card">
+            <h3>数据集 1 - 原始数据（强度）</h3>
+            <table class="stats-table" id="statsOriginal1">
+              <tbody>
+                <tr><td>最大值</td><td id="origMax1">—</td></tr>
+                <tr><td>最小值</td><td id="origMin1">—</td></tr>
+                <tr><td>Q1 (25%)</td><td id="origQ11">—</td></tr>
+                <tr><td>中位数 Q2 (50%)</td><td id="origQ21">—</td></tr>
+                <tr><td>Q3 (75%)</td><td id="origQ31">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="stats-card">
+            <h3>数据集 1 - 展宽后数据（归一化强度）</h3>
+            <table class="stats-table" id="statsProcessed1">
+              <tbody>
+                <tr><td>最大值</td><td id="procMax1">—</td></tr>
+                <tr><td>最小值</td><td id="procMin1">—</td></tr>
+                <tr><td>Q1 (25%)</td><td id="procQ11">—</td></tr>
+                <tr><td>中位数 Q2 (50%)</td><td id="procQ21">—</td></tr>
+                <tr><td>Q3 (75%)</td><td id="procQ31">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="stats-card">
+            <h3>数据集 2 - 原始数据（强度）</h3>
+            <table class="stats-table" id="statsOriginal2">
+              <tbody>
+                <tr><td>最大值</td><td id="origMax2">—</td></tr>
+                <tr><td>最小值</td><td id="origMin2">—</td></tr>
+                <tr><td>Q1 (25%)</td><td id="origQ12">—</td></tr>
+                <tr><td>中位数 Q2 (50%)</td><td id="origQ22">—</td></tr>
+                <tr><td>Q3 (75%)</td><td id="origQ32">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="stats-card">
+            <h3>数据集 2 - 展宽后数据（归一化强度）</h3>
+            <table class="stats-table" id="statsProcessed2">
+              <tbody>
+                <tr><td>最大值</td><td id="procMax2">—</td></tr>
+                <tr><td>最小值</td><td id="procMin2">—</td></tr>
+                <tr><td>Q1 (25%)</td><td id="procQ12">—</td></tr>
+                <tr><td>中位数 Q2 (50%)</td><td id="procQ22">—</td></tr>
+                <tr><td>Q3 (75%)</td><td id="procQ32">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="similarity-section" id="similaritySection">
+          <h3>数据集相似度比较</h3>
+          <div class="similarity-grid">
+            <div class="similarity-card">
+              <h4>余弦相似度</h4>
+              <div class="similarity-value" id="cosineSimilarity">—</div>
+            </div>
+            <div class="similarity-card">
+              <h4>卡方检验</h4>
+              <div class="similarity-value" id="chiSquareTest">—</div>
+            </div>
+            <div class="similarity-card">
+              <h4>均方误差 (MSE)</h4>
+              <div class="similarity-value" id="mseValue">—</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>材料 XRD 可视化 · 高斯展宽算法</p>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
