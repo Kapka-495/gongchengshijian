@@ -1,0 +1,29 @@
+{
+  "name": "pichemdata",
+  "version": "1.0.0",
+  "description": "精准化学数据平台 - Precision Chemistry Data Platform",
+  "scripts": {
+    "serve": "vue-cli-service serve",
+    "serve:xrd": "concurrently -n vue,xrd -c blue,green \"vue-cli-service serve\" \"python xrd-backend/main.py\"",
+    "build": "vue-cli-service build",
+    "lint": "vue-cli-service lint"
+  },
+  "dependencies": {
+    "axios": "^1.4.0",
+    "core-js": "^3.8.3",
+    "echarts": "^5.4.3",
+    "element-ui": "^2.15.14",
+    "vue": "^2.7.16",
+    "vue-i18n": "^8.28.2",
+    "vue-router": "^3.6.5",
+    "vuex": "^3.6.2"
+  },
+  "devDependencies": {
+    "@vue/cli-plugin-babel": "~5.0.0",
+    "@vue/cli-plugin-router": "~5.0.0",
+    "@vue/cli-plugin-vuex": "~5.0.0",
+    "@vue/cli-service": "~5.0.0",
+    "concurrently": "^10.0.3",
+    "vue-template-compiler": "^2.7.16"
+  }
+}

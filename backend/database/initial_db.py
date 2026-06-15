@@ -1,3 +1,8 @@
+"""
+用于建立数据库的表,建表时只运行一次即可
+
+"""
+
 import sqlite3
 import tomli
 import os
@@ -6,7 +11,7 @@ parent_dir = Path(__file__).resolve().parent.parent
 os.chdir(parent_dir)
 
 def init_db(db_path='chemistry.db'):
-    
+
 
 def init_molecules_table(db_path='chemistry.db'):
     with sqlite3.connect(db_path) as conn:
@@ -179,6 +184,6 @@ if __name__ == '__main__':
     init_molecules_table(db_path)
     
     # 2. 插入数据
-    insert_molecule(db_path, payload)
+    # insert_molecule(db_path, payload)
     
-    print("数据库初始化并写入成功。")
+    print("数据库初始化成功。")

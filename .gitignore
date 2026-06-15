@@ -1,1 +1,4 @@
 backend/db_table
+tmp.*
+node_modules
+dist
