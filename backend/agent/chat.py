@@ -7,14 +7,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-import os
 from pathlib import Path
 
-# 加载 .env 文件
-from dotenv import load_dotenv
-env_path = Path(__file__).resolve().parent.parent / ".env"
-if env_path.exists():
-    load_dotenv(env_path)
+import tomli
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -24,11 +19,35 @@ from .prompts import SYSTEM_PROMPT, RAG_QUERY_TEMPLATE
 
 router = APIRouter(tags=["AI Agent"])
 
-# LLM 配置（可切换不同模型）
+
+# ========== 配置加载 ==========
+def load_agent_config():
+    """从 config.toml 加载配置"""
+    config_file = Path(__file__).resolve().parent.parent / "config" / "config.toml"
+    if config_file.exists():
+        with open(config_file, "rb") as f:
+            return tomli.load(f)
+    return {}
+
+
+# 加载配置
+_config = load_agent_config()
+_agent_config = _config.get("agent", {})
+_rag_config = _config.get("rag", {})
+
+# LLM 配置
 LLM_CONFIG = {
-    "model": os.getenv("LLM_MODEL", "gpt-3.5-turbo"),  # 可选：gpt-4, claude-3, qwen-turbo 等
-    "temperature": 0.7,
-    "max_tokens": 1000,
+    "model": _agent_config.get("llm_model", "gpt-3.5-turbo"),
+    "temperature": _agent_config.get("llm_temperature", 0.7),
+    "max_tokens": _agent_config.get("llm_max_tokens", 1000),
+    "api_key": _agent_config.get("api_key", ""),
+    "base_url": _agent_config.get("base_url", ""),
+}
+
+# RAG 配置
+RAG_CONFIG = {
+    "top_k": _rag_config.get("top_k", 5),
+    "max_history": _rag_config.get("max_history", 10),
 }
 
 # 全局 LLM 实例
@@ -43,8 +62,8 @@ def get_llm():
             model=LLM_CONFIG["model"],
             temperature=LLM_CONFIG["temperature"],
             max_tokens=LLM_CONFIG["max_tokens"],
-            api_key=os.getenv("OPENAI_API_KEY", ""),  # 从环境变量读取
-            base_url=os.getenv("OPENAI_BASE_URL", None),  # 可用于代理或自定义端点
+            api_key=LLM_CONFIG["api_key"],
+            base_url=LLM_CONFIG["base_url"] if LLM_CONFIG["base_url"] else None,
         )
     return _llm
 
@@ -83,7 +102,7 @@ async def chat(request: ChatRequest):
             print(f"知识库初始化跳过: {e}")
 
         # 2. RAG 检索
-        retrieved = retrieve(request.message, top_k=5)
+        retrieved = retrieve(request.message, top_k=RAG_CONFIG["top_k"])
         context = format_retrieved_context(retrieved)
 
         # 3. 构造 Prompt
@@ -93,9 +112,9 @@ async def chat(request: ChatRequest):
         # 4. 构建消息列表
         messages = [SystemMessage(content=system_msg)]
 
-        # 5. 添加历史对话（如果需要可做截断）
+        # 5. 添加历史对话（截断）
         if request.history:
-            for msg in request.history[-10:]:  # 最多保留10条
+            for msg in request.history[-RAG_CONFIG["max_history"]:]:
                 if msg.role == "user":
                     messages.append(HumanMessage(content=msg.content))
                 else:

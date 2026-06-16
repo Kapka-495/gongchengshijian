@@ -9,14 +9,11 @@ from pathlib import Path
 from typing import List
 import io
 import numpy as np
-import uuid
+import torch
 
 from xrd_processor import xrd_process
 
 router = APIRouter(tags=["XRD"])
-
-# Global cache for loaded NPY data
-_npy_cache = {}
 
 
 class XRDDataPoint(BaseModel):
@@ -25,7 +22,7 @@ class XRDDataPoint(BaseModel):
 
 
 class ProcessRequest(BaseModel):
-    data: List[XRDDataPoint]  # XRD 原始数据
+    data: List[XRDDataPoint]  # XRD 原始数据 [{angle, intensity}, ...]
     min_angle: float = 5.0
     max_angle: float = 90.0
     step: float = 0.01
@@ -35,16 +32,16 @@ class ProcessRequest(BaseModel):
 @router.post("/process")
 async def process_xrd(request: ProcessRequest):
     """
-    处理 XRD 数据，返回展宽后的稠密向量用于可视化
+    对文本 XRD 数据做处理
+    输入: { data: [[angle, intensity], ...], min_angle, max_angle, step, sigma }
+    输出: { original: { angles, intensities }, processed: { angles, intensities } }
     """
     if not request.data:
         raise HTTPException(status_code=400, detail="XRD 数据不能为空")
 
     try:
-        # 转换为 numpy 数组 [N, 2]
-        xrd_array = np.array(
-            [[p.angle, p.intensity] for p in request.data], dtype=np.float32
-        )
+        # 将对象列表转换为 numpy 数组 [N, 2]
+        xrd_array = np.array([[p.angle, p.intensity] for p in request.data], dtype=np.float32)
 
         pos_emb, sign_emb = xrd_process(
             xrd_array,
@@ -65,8 +62,8 @@ async def process_xrd(request: ProcessRequest):
 
         return {
             "original": {
-                "angles": [p.angle for p in request.data],
-                "intensities": [p.intensity for p in request.data],
+                "angles": xrd_array[:, 0].tolist(),
+                "intensities": xrd_array[:, 1].tolist(),
             },
             "processed": {
                 "angles": grid_angles,
@@ -78,11 +75,17 @@ async def process_xrd(request: ProcessRequest):
 
 
 @router.post("/upload-npy")
-async def upload_npy_file(
-    file: UploadFile = File(..., description="NPY 文件，包含 features 和 labels230 键"),
+async def upload_npy(
+    file: UploadFile = File(..., description="NPY 文件"),
+    min_angle: float = Form(5.0),
+    max_angle: float = Form(90.0),
+    step: float = Form(0.01),
+    sigma: float = Form(0.1),
 ):
     """
-    上传并缓存 NPY 文件，返回可用数据组信息
+    上传 .npy 文件并处理 XRD 数据
+    输入: FormData { file, min_angle, max_angle, step, sigma }
+    输出: { original: { angles, intensities }, processed: { angles, intensities } }
     """
     if not file.filename or not file.filename.lower().endswith(".npy"):
         raise HTTPException(status_code=400, detail="请上传 .npy 文件")
@@ -91,117 +94,71 @@ async def upload_npy_file(
         content = await file.read()
         buf = io.BytesIO(content)
 
-        # Load NPY file with pickle support for dictionary format
+        # 加载 NPY 文件
         arr = np.load(buf, allow_pickle=True)
 
-        # Handle 0-dimensional object (dictionary format)
+        # 处理不同格式的 NPY 文件
+        xrd_array = None
+
+        # 处理 0 维对象（字典格式）
         if arr.ndim == 0:
             obj = arr.item()
             if isinstance(obj, dict) and "features" in obj:
                 features = np.asarray(obj["features"], dtype=np.float32)
-                if features.ndim != 2:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"features 应为二维数组 (样本数, 网格点数)，当前形状: {features.shape}",
-                    )
-
-                # Cache the features array using a unique key to avoid conflicts
-                cache_key = f"{file.filename}_{uuid.uuid4().hex[:8]}"
-                _npy_cache[cache_key] = features
-                print(f"调试: 缓存文件 '{file.filename}' -> '{cache_key}', 总缓存数: {len(_npy_cache)}")
-
-                return {
-                    "success": True,
-                    "filename": cache_key,  # Return the unique cache key
-                    "total_groups": features.shape[0],
-                    "grid_points": features.shape[1],
-                    "message": f"成功加载 {features.shape[0]} 组数据，每组 {features.shape[1]} 个网格点"
-                }
+                # 取第一组数据
+                if features.ndim == 2:
+                    xrd_array = process_dense_features(features, min_angle, max_angle)
+                else:
+                    # 尝试作为原始数据
+                    xrd_array = features.reshape(-1, 2) if features.size % 2 == 0 else None
+            elif isinstance(obj, dict) and "data" in obj:
+                xrd_array = np.asarray(obj["data"], dtype=np.float32)
             else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="NPY 文件必须包含 'features' 键",
-                )
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="不支持的 NPY 格式，期望 0 维对象包含 features 键",
-            )
+                # 尝试直接转换
+                xrd_array = np.asarray(obj, dtype=np.float32)
+        # 处理 1 维数组
+        elif arr.ndim == 1:
+            # 可能是密集数据或需要配对
+            if arr.size % 2 == 0:
+                xrd_array = arr.reshape(-1, 2)
+            else:
+                # 假设是密集强度值，需要生成角度
+                xrd_array = process_dense_data(arr, min_angle, max_angle)
+        # 处理 2 维数组
+        elif arr.ndim == 2:
+            if arr.shape[1] == 2:
+                # 已经是 [[angle, intensity], ...] 格式
+                xrd_array = arr
+            elif arr.shape[0] == 2:
+                # 转置为 [[angle, intensity], ...] 格式
+                xrd_array = arr.T
+            else:
+                # 假设是多组数据，取第一组
+                xrd_array = process_dense_features(arr, min_angle, max_angle)
 
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"无法解析 NPY 文件: {str(e)}")
+        if xrd_array is None or xrd_array.ndim != 2 or xrd_array.shape[1] != 2:
+            raise HTTPException(status_code=400, detail="无法解析 NPY 文件格式")
 
-
-@router.post("/process-npy-group")
-async def process_npy_group(
-    filename: str = Form(..., description="已上传的 NPY 文件名"),
-    group_index: int = Form(..., description="要选择的数据组索引 (0-based)"),
-    min_angle: float = Form(5.0),
-    max_angle: float = Form(90.0),
-):
-    """
-    处理已上传 NPY 文件中的指定数据组
-    """
-    print(f"调试: 查找缓存文件 '{filename}', 当前缓存键: {list(_npy_cache.keys())}")
-    if filename not in _npy_cache:
-        raise HTTPException(status_code=404, detail=f"文件 '{filename}' 未找到，请重新上传。可用缓存: {list(_npy_cache.keys())}")
-
-    features = _npy_cache[filename]
-
-    if group_index < 0 or group_index >= features.shape[0]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"数据组索引超出范围，可用范围: 0-{features.shape[0]-1}"
-        )
-
-    try:
-        # Extract the selected group data
-        group_data = features[group_index, :]  # Shape: (8500,)
-
-        # Create angles array (5-90 degrees, 0.01 degree step = 8500 points)
-        angles = np.linspace(5.0, 90.0, 8500)
-
-        # Create the expected format for xrd_process: [N, 2] array
-        # Since this is already dense data, we'll treat each point as a peak
-        # But we need to filter out near-zero intensities to avoid excessive processing
-        threshold = 1e-6
-        valid_mask = group_data > threshold
-
-        if valid_mask.sum() == 0:
-            # If all values are near zero, return zeros
-            grid_length = int((max_angle - min_angle) / 0.01) + 1
-            grid_angles = np.linspace(min_angle, max_angle, grid_length).tolist()
-            zero_intensities = [0.0] * grid_length
-
-            return {
-                "original": {"angles": [], "intensities": []},
-                "processed": {"angles": grid_angles, "intensities": zero_intensities},
-            }
-
-        valid_angles = angles[valid_mask]
-        valid_intensities = group_data[valid_mask]
-
-        # Create [N, 2] array for processing
-        xrd_array = np.column_stack([valid_angles, valid_intensities]).astype(np.float32)
-
-        # Process using the existing xrd_process function
+        # 处理 XRD 数据
         pos_emb, sign_emb = xrd_process(
             xrd_array,
             min_angle=min_angle,
             max_angle=max_angle,
-            step=0.01,  # Fixed step for 8500 points over 85 degrees
-            sigma=0.1,
+            step=step,
+            sigma=sigma,
         )
 
-        # Generate output grid
-        grid_length = int((max_angle - min_angle) / 0.01) + 1
+        # 生成用于绘图的网格角度
+        grid_length = int((max_angle - min_angle) / step) + 1
         grid_angles = np.linspace(min_angle, max_angle, grid_length).tolist()
+
+        # 转换为可 JSON 序列化的列表
         broadened_intensities = sign_emb.squeeze().numpy().tolist()
 
         return {
             "original": {
-                "angles": valid_angles.tolist(),
-                "intensities": valid_intensities.tolist(),
+                "angles": xrd_array[:, 0].tolist(),
+                "intensities": xrd_array[:, 1].tolist(),
             },
             "processed": {
                 "angles": grid_angles,
@@ -209,28 +166,55 @@ async def process_npy_group(
             },
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
 
 
-@router.get("/npy-info/{filename}")
-async def get_npy_info(filename: str):
+def process_dense_features(features, min_angle, max_angle):
     """
-    获取已上传 NPY 文件的信息
+    将密集特征数据转换为 XRD 处理格式
+    假设 features 是 [N, grid_points] 或 [grid_points] 格式
     """
-    if filename not in _npy_cache:
-        raise HTTPException(status_code=404, detail="文件未找到")
+    # 如果是 2D，取第一组
+    if features.ndim == 2:
+        data = features[0]
+    else:
+        data = features
 
-    features = _npy_cache[filename]
-    return {
-        "filename": filename,
-        "total_groups": features.shape[0],
-        "grid_points": features.shape[1],
-        "shape": features.shape,
-        "dtype": str(features.dtype)
-    }
+    # 假设数据覆盖 min_angle 到 max_angle 的范围
+    grid_points = data.shape[0]
+    angles = np.linspace(min_angle, max_angle, grid_points)
+
+    # 过滤掉接近零的值以提高效率
+    threshold = 1e-6
+    valid_mask = data > threshold
+
+    if valid_mask.sum() == 0:
+        return np.column_stack([angles, data])
+
+    valid_angles = angles[valid_mask]
+    valid_intensities = data[valid_mask]
+
+    return np.column_stack([valid_angles, valid_intensities]).astype(np.float32)
 
 
-def get_npy_cache():
-    """获取 NPY 缓存字典（用于 main.py 访问）"""
-    return _npy_cache
+def process_dense_data(data, min_angle, max_angle):
+    """
+    将 1D 密集数据转换为 XRD 处理格式
+    """
+    grid_points = data.shape[0]
+    angles = np.linspace(min_angle, max_angle, grid_points)
+
+    # 过滤掉接近零的值
+    threshold = 1e-6
+    valid_mask = data > threshold
+
+    if valid_mask.sum() == 0:
+        return np.column_stack([angles, data])
+
+    valid_angles = angles[valid_mask]
+    valid_intensities = data[valid_mask]
+
+    return np.column_stack([valid_angles, valid_intensities]).astype(np.float32)

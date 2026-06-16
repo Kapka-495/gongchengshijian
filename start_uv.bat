@@ -34,7 +34,7 @@ if "%NEED_INIT%"=="1" (
 
 echo [2/3] Starting backend...
 cd /d "%PROJECT_DIR%backend"
-start "Backend" cmd /k "python main.py"
+start "Backend" cmd /k "uv run main.py"
 
 timeout /t 3 /nobreak >nul
 

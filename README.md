@@ -1,6 +1,40 @@
-  使用方式
+## 使用方式
 
-##   开发模式（前后端分离）：
+### 方法一：使用UV管理包
+
+1. 下载uv
+
+   ```
+   irm https://astral.sh/uv/install.ps1 | iex
+   ```
+
+2. 进入根目录
+
+3. 输入以下指令
+
+   ```
+   uv sync
+   cd frontend
+   npm install
+   ```
+
+4. 点击根目录下的`start_uv.bat`
+
+### 方法二：用本地python
+
+1. 确保python的版本为3.9
+
+2. 输入以下命令
+
+   ```
+   pip install -r requirements.txt
+   cd frontend
+   npm install
+   ```
+
+3. 点击根目录下的`start.bat`
+
+## 开发模式（前后端分离）：
 
 终端1：启动后端
 
@@ -12,14 +46,6 @@
 
 前端通过代理访问后端 API
 
-##   生产模式（前端构建后）：
+## Agent API配置
 
-  cd frontend && npm run build
-  cd ../backend && python main.py
-
-访问 http://localhost:8000/ 或 http://localhost:8000/pichemdata/
-
-  注意事项
-
-  - XRD 接口保持 /api/* 路径（与前端 vue.config.js 代理配置一致）
-  - 如需添加 /pichemdata/api/v1/* 路由，可在 routers/ 中新增文件并注册到 main.py
+运行一次后端后，会生成一个`backend\config\config.toml`文件，在该文件中配置`api_key`和`base_url`后重新运行后端即可

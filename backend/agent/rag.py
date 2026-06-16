@@ -7,14 +7,28 @@ import sqlite3
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+import tomli
 import chromadb
 from chromadb.config import Settings
 
-# 数据库路径
-DB_PATH = Path(__file__).resolve().parent.parent / "db_table" / "chemistry.db"
 
-# Chroma 持久化路径
-CHROMA_PATH = Path(__file__).resolve().parent.parent / "db_table" / "chroma_db"
+# ========== 配置加载 ==========
+def load_rag_config():
+    """从 config.toml 加载配置"""
+    config_file = Path(__file__).resolve().parent.parent / "config" / "config.toml"
+    if config_file.exists():
+        with open(config_file, "rb") as f:
+            return tomli.load(f)
+    return {}
+
+
+_config = load_rag_config()
+_db_config = _config.get("database", {})
+_rag_config = _config.get("rag", {})
+
+# 数据库路径（优先使用配置，否则使用默认）
+DB_PATH = Path(__file__).resolve().parent.parent / _db_config.get("path", "db_table/") / "chemistry.db"
+CHROMA_PATH = Path(__file__).resolve().parent.parent / _rag_config.get("chroma_path", "db_table/chroma_db")
 
 # 全局 Chroma 客户端（单例）
 _chroma_client = None
