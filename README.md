@@ -8,9 +8,11 @@
    irm https://astral.sh/uv/install.ps1 | iex
    ```
 
-2. 进入根目录
+2. 下载[node.js](https://nodejs.org/zh-cn)
 
-3. 输入以下指令
+3. 进入根目录
+
+4. 输入以下指令
 
    ```
    uv sync
@@ -18,11 +20,12 @@
    npm install
    ```
 
-4. 点击根目录下的`start_uv.bat`
+5. 点击根目录下的`start_uv.bat`
 
 ### 方法二：用本地python
 
 1. 确保python的版本为3.9
+2. 下载[node.js](https://nodejs.org/zh-cn)
 
 2. 输入以下命令
 

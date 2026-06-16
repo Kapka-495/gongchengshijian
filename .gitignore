@@ -7,3 +7,4 @@ dist
 database
 __pycache__/
 需求*.md
+backend/config
